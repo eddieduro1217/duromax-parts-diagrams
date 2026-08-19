@@ -1,0 +1,1 @@
+# duromax-parts-diagrams
