@@ -261,6 +261,45 @@
   }
   .plain-diagram-wrap img{ width:100%; flex:1; object-fit:contain; display:block; min-height:0; }
 
+  /* ---------- Magnifier / zoom lens ---------- */
+  .img-zoom-wrap{
+    position:relative;
+    flex:1;
+    display:flex;
+    min-height:0;
+    overflow:hidden;
+  }
+  .img-zoom-wrap img{ cursor:zoom-in; user-select:none; -webkit-user-drag:none; touch-action:none; }
+  .img-zoom-wrap.zoom-active img{ cursor:crosshair; }
+  .mag-lens{
+    position:absolute;
+    top:0; left:0;
+    width:220px; height:220px;
+    border-radius:50%;
+    border:3px solid var(--green);
+    box-shadow:0 6px 20px rgba(0,0,0,0.35), inset 0 0 0 2px rgba(255,255,255,0.55);
+    background-color:#fff;
+    background-repeat:no-repeat;
+    pointer-events:none;
+    display:none;
+    z-index:5;
+  }
+  .mag-lens.show{ display:block; }
+  .zoom-hint{
+    position:absolute;
+    bottom:12px; left:50%;
+    transform:translateX(-50%);
+    background:rgba(28,29,29,0.82); color:#fff;
+    font-size:11px; font-weight:600;
+    padding:6px 13px; border-radius:20px;
+    pointer-events:none; z-index:6;
+    white-space:nowrap;
+    transition:opacity .2s ease;
+  }
+  @media (max-width:640px){
+    .mag-lens{ width:150px; height:150px; }
+  }
+
   /* ---------- Parts table (detail sidebar) ---------- */
   .table-scroll{ max-height:78vh; overflow:auto; }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; }
@@ -575,26 +614,113 @@ function renderDiagram(fig){
   const pageUrl = `${GH_BASE}/images/${encodeURIComponent(selectedModel)}/${encodeURIComponent(fig.page)}.jpeg`;
 
   body.innerHTML = `
-    <span class="no-hotspot-badge">● Reference diagram — click a row on the right to open NetSuite</span>
+    <span class="no-hotspot-badge">● Click image to zoom — click a row on the right to open NetSuite</span>
     <div class="plain-diagram-wrap">
       <div class="pd-head">
         <span>FIG.${escHtml(fig.num)} — ${escHtml(fig.name)}</span>
         <a href="${croppedUrl}" target="_blank" rel="noopener" style="color:var(--site-blue); text-decoration:none;">Open full size ↗</a>
       </div>
-      <img src="${croppedUrl}" alt="Diagram for FIG.${escHtml(fig.num)} ${escHtml(fig.name)}" loading="lazy"
-           data-fallback="${pageUrl}" data-tried-fallback="0"
-           onerror="
-             if(this.dataset.triedFallback==='0'){ this.dataset.triedFallback='1'; this.src=this.dataset.fallback; }
-             else { this.closest('.plain-diagram-wrap').querySelector('.pd-image-fallback-text')?.remove();
-                    const msg=document.createElement('div');
-                    msg.className='pd-image-fallback-text';
-                    msg.style='padding:60px 20px; text-align:center; color:var(--text-dim);';
-                    msg.textContent='Diagram image for this figure isn\\'t uploaded yet — the parts list on the right is still fully usable.';
-                    this.replaceWith(msg);
-                  }
-           " />
+      <div class="img-zoom-wrap">
+        <img src="${croppedUrl}" alt="Diagram for FIG.${escHtml(fig.num)} ${escHtml(fig.name)}" loading="lazy"
+             data-fallback="${pageUrl}" data-tried-fallback="0"
+             onerror="
+               if(this.dataset.triedFallback==='0'){ this.dataset.triedFallback='1'; this.src=this.dataset.fallback; }
+               else { this.closest('.plain-diagram-wrap').querySelector('.pd-image-fallback-text')?.remove();
+                      const msg=document.createElement('div');
+                      msg.className='pd-image-fallback-text';
+                      msg.style='padding:60px 20px; text-align:center; color:var(--text-dim);';
+                      msg.textContent='Diagram image for this figure isn\\'t uploaded yet — the parts list on the right is still fully usable.';
+                      const zw=this.closest('.img-zoom-wrap');
+                      this.replaceWith(msg);
+                      if(zw){ zw.querySelector('.mag-lens')?.remove(); zw.querySelector('.zoom-hint')?.remove(); }
+                    }
+             " />
+        <div class="mag-lens"></div>
+        <span class="zoom-hint">Click image to zoom</span>
+      </div>
     </div>
   `;
+
+  const zoomWrap = body.querySelector('.img-zoom-wrap');
+  const img = zoomWrap.querySelector('img');
+  if(img) initMagnifier(img, zoomWrap);
+}
+
+// ---------- Magnifier / zoom lens ----------
+function initMagnifier(imgEl, wrapEl){
+  const ZOOM = 2.5;
+  let active = false;
+
+  function contentRect(){
+    const rect = imgEl.getBoundingClientRect();
+    const nw = imgEl.naturalWidth, nh = imgEl.naturalHeight;
+    if(!nw || !nh || !rect.width || !rect.height) return null;
+    const scale = Math.min(rect.width / nw, rect.height / nh);
+    const cw = nw * scale, ch = nh * scale;
+    const offX = (rect.width - cw) / 2;
+    const offY = (rect.height - ch) / 2;
+    return { rect, cw, ch, offX, offY };
+  }
+
+  function positionLens(clientX, clientY){
+    const lens = wrapEl.querySelector('.mag-lens');
+    if(!lens) return;
+    const cr = contentRect();
+    if(!cr) return;
+    const { rect, cw, ch, offX, offY } = cr;
+    let x = clientX - rect.left;
+    let y = clientY - rect.top;
+    x = Math.max(offX, Math.min(offX + cw, x));
+    y = Math.max(offY, Math.min(offY + ch, y));
+    const relX = x - offX;
+    const relY = y - offY;
+
+    const lensSize = lens.offsetWidth;
+    lens.style.left = `${x - lensSize/2}px`;
+    lens.style.top = `${y - lensSize/2}px`;
+
+    const bgW = cw * ZOOM;
+    const bgH = ch * ZOOM;
+    const bgX = -(relX * ZOOM - lensSize/2);
+    const bgY = -(relY * ZOOM - lensSize/2);
+
+    lens.style.backgroundImage = `url("${imgEl.src}")`;
+    lens.style.backgroundSize = `${bgW}px ${bgH}px`;
+    lens.style.backgroundPosition = `${bgX}px ${bgY}px`;
+    lens.classList.add('show');
+  }
+
+  function activate(clientX, clientY){
+    if(!contentRect()) return;
+    active = true;
+    wrapEl.classList.add('zoom-active');
+    const hint = wrapEl.querySelector('.zoom-hint');
+    if(hint) hint.textContent = 'Click to exit zoom';
+    positionLens(clientX, clientY);
+  }
+  function deactivate(){
+    active = false;
+    wrapEl.classList.remove('zoom-active');
+    const lens = wrapEl.querySelector('.mag-lens');
+    if(lens) lens.classList.remove('show');
+    const hint = wrapEl.querySelector('.zoom-hint');
+    if(hint) hint.textContent = 'Click image to zoom';
+  }
+
+  wrapEl.addEventListener('click', (e) => {
+    if(active) deactivate();
+    else activate(e.clientX, e.clientY);
+  });
+  wrapEl.addEventListener('pointermove', (e) => {
+    if(active) positionLens(e.clientX, e.clientY);
+  });
+  wrapEl.addEventListener('pointerleave', () => {
+    const lens = wrapEl.querySelector('.mag-lens');
+    if(active && lens) lens.classList.remove('show');
+  });
+  wrapEl.addEventListener('pointerenter', (e) => {
+    if(active) positionLens(e.clientX, e.clientY);
+  });
 }
 
 function renderDetailTable(parts){
