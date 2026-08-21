@@ -252,7 +252,8 @@
     border:1px solid var(--line); border-radius:8px; overflow:hidden;
     background:#fff;
     display:flex; flex-direction:column;
-    min-height:750px;
+    min-height:380px;
+    max-height:calc(100vh - 346px);
   }
   .plain-diagram-wrap .pd-head{
     padding:8px 12px; font-size:11px; color:var(--text-dim);
@@ -301,7 +302,7 @@
   }
 
   /* ---------- Parts table (detail sidebar) ---------- */
-  .table-scroll{ max-height:78vh; overflow:auto; }
+  .table-scroll{ max-height:calc(100vh - 300px); overflow:auto; }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   thead th{
     position:sticky; top:0; z-index:2;
