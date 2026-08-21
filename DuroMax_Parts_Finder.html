@@ -43,7 +43,7 @@
     background:var(--black);
   }
   .site-header-inner{
-    max-width:1500px; margin:0 auto;
+    max-width:1800px; margin:0 auto;
     padding:14px 24px;
     display:flex; align-items:center; justify-content:space-between;
     flex-wrap:wrap; gap:14px;
@@ -71,7 +71,7 @@
     border-bottom:1px solid var(--site-blue-hi);
   }
   .controls-inner{
-    max-width:1500px; margin:0 auto; padding:14px 24px;
+    max-width:1800px; margin:0 auto; padding:14px 24px;
     display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;
   }
   .field{ display:flex; flex-direction:column; gap:6px; }
@@ -136,14 +136,14 @@
 
   /* ---------- Meta bar ---------- */
   .meta-bar{
-    max-width:1500px; margin:0 auto; padding:14px 24px 0;
+    max-width:1800px; margin:0 auto; padding:14px 24px 0;
     display:flex; justify-content:space-between; align-items:center;
     font-size:12px; color:var(--text-dim); font-family:var(--mono);
   }
 
   /* ---------- Main container ---------- */
   .main-wrap{
-    max-width:1500px; margin:0 auto; padding:16px 24px 50px;
+    max-width:1800px; margin:0 auto; padding:16px 24px 50px;
   }
 
   /* ---------- Sections grid ---------- */
@@ -213,11 +213,11 @@
   /* ---------- Detail view: diagram + parts side by side ---------- */
   .detail-layout{
     display:grid;
-    grid-template-columns: 1.3fr 1fr;
+    grid-template-columns: 1.7fr 1fr;
     gap:18px;
     align-items:start;
   }
-  @media (max-width:980px){
+  @media (max-width:1100px){
     .detail-layout{ grid-template-columns: 1fr; }
   }
   .panel{
