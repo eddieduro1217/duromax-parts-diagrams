@@ -403,7 +403,7 @@
 
 <div class="controls-bar">
   <div class="controls-inner">
-    <button class="back-btn" id="backBtn" onclick="goBackToSections()">&larr; Back to sections</button>
+    <button class="back-btn" id="backBtn" onclick="handleBackButton()">&larr; Back to sections</button>
     <div class="field">
       <label for="seriesSelect">Series</label>
       <select id="seriesSelect">
@@ -568,6 +568,7 @@ function findSeriesForModel(model){
   return '';
 }
 function selectModelFromChip(model){
+  searchReturn = null;
   const series = findSeriesForModel(model);
   if(series){
     seriesSelect.value = series;
@@ -581,7 +582,19 @@ function selectModelFromChip(model){
   render();
 }
 // ---- Jump from a search hit to that part's model + figure, with the row flagged ----
+// Remembers the search the user came from so the back button can return to it.
+// Null whenever the current figure was reached by browsing rather than searching.
+let searchReturn = null;
+
 function goToPartFigure(model, figNum, ref, partNum){
+  const resultsScroll = mainWrap.querySelector('.table-scroll');
+  searchReturn = {
+    query: searchInput.value,
+    model: selectedModel,
+    series: seriesSelect.value,
+    modelSel: modelSelect.value,
+    scrollTop: resultsScroll ? resultsScroll.scrollTop : 0
+  };
   if(selectedModel !== model){
     const series = findSeriesForModel(model);
     if(series){
@@ -657,6 +670,7 @@ function getFiguresForModel(model){
 
 // ---------- Rendering: Sections grid ----------
 function renderSections(){
+  searchReturn = null;
   currentFigure = null;
   backBtn.classList.remove('show');
   const figures = getFiguresForModel(selectedModel);
@@ -708,7 +722,7 @@ function renderSections(){
         </div>
       </div>
     `;
-    card.addEventListener('click', () => renderDetail(fig.num));
+    card.addEventListener('click', () => { searchReturn = null; renderDetail(fig.num); });
     grid.appendChild(card);
   });
 }
@@ -717,6 +731,9 @@ function renderSections(){
 function renderDetail(figNum, focus){
   currentFigure = figNum;
   backBtn.classList.add('show');
+  backBtn.innerHTML = searchReturn
+    ? '&larr; Back to search results'
+    : '&larr; Back to sections';
   const figures = getFiguresForModel(selectedModel);
   const fig = figures.find(f => f.num === figNum);
   if(!fig) return;
@@ -1059,12 +1076,37 @@ function render(){
 }
 
 function goBackToSections(){
+  searchReturn = null;
   searchInput.value = '';
   currentFigure = null;
   renderSections();
 }
 
+// Rebuilds the exact result list the user clicked from — same query, same
+// series/model state, scrolled back to where they were in the list.
+function returnToSearchResults(){
+  if(!searchReturn){ goBackToSections(); return; }
+  const s = searchReturn;
+  searchReturn = null;
+  seriesSelect.value = s.series;
+  populateModelsForSeries(s.series);
+  modelSelect.value = s.modelSel;
+  selectedModel = s.model;
+  currentFigure = null;
+  searchInput.value = s.query;
+  render();
+  const wrap = mainWrap.querySelector('.table-scroll');
+  if(wrap && s.scrollTop) wrap.scrollTop = s.scrollTop;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function handleBackButton(){
+  if(searchReturn) returnToSearchResults();
+  else goBackToSections();
+}
+
 modelSelect.addEventListener('change', () => {
+  searchReturn = null;
   selectedModel = modelSelect.value;
   currentFigure = null;
   searchInput.value = '';
@@ -1072,13 +1114,14 @@ modelSelect.addEventListener('change', () => {
   render();
 });
 seriesSelect.addEventListener('change', () => {
+  searchReturn = null;
   populateModelsForSeries(seriesSelect.value);
   selectedModel = '';
   currentFigure = null;
   searchInput.value = '';
   render();
 });
-searchInput.addEventListener('input', render);
+searchInput.addEventListener('input', () => { searchReturn = null; render(); });
 
 render();
 </script>
