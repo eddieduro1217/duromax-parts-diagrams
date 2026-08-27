@@ -300,6 +300,12 @@
   }
   tbody tr{ cursor:pointer; transition:background .1s ease; }
   tbody tr:hover{ background:var(--panel-2); }
+  tbody tr.row-focus{
+    background:rgba(214,69,69,0.13);
+    box-shadow: inset 3px 0 0 var(--warn);
+  }
+  tbody tr.row-focus:hover{ background:rgba(214,69,69,0.18); }
+  tbody tr.row-focus .part-code{ color:var(--warn); }
   .ref-badge{
     font-family:var(--mono); font-size:10.5px; color:var(--site-blue);
     background:rgba(15,75,145,0.08);
@@ -411,8 +417,8 @@
       </select>
     </div>
     <div class="field search-wrap">
-      <label for="searchInput">Search part #, description, or ref # — across all models, or select one first to narrow it down</label>
-      <input type="text" id="searchInput" placeholder="e.g. DMXP-13-016-RB, carburetor, F05-14…" autocomplete="off" />
+      <label for="searchInput">Search by part # or description — across all models, or select one first to narrow it down</label>
+      <input type="text" id="searchInput" placeholder="e.g. DMXP-13-016-RB, voltage regulator, fuel filter…" autocomplete="off" />
     </div>
   </div>
 </div>
@@ -462,12 +468,31 @@ const GH_BASE = 'https://raw.githubusercontent.com/eddieduro1217/duromax-parts-d
 function escHtml(s){
   return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-function highlight(text, query){
-  if(!query) return escHtml(text);
-  const idx = (text || '').toLowerCase().indexOf(query.toLowerCase());
-  if(idx === -1) return escHtml(text);
-  return escHtml(text.slice(0,idx)) + '<mark style="background:rgba(188,13,38,0.35);color:inherit;border-radius:2px;">' +
-         escHtml(text.slice(idx, idx+query.length)) + '</mark>' + escHtml(text.slice(idx+query.length));
+const MARK_OPEN = '<mark style="background:rgba(188,13,38,0.35);color:inherit;border-radius:2px;">';
+function escRegex(s){ return (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+// Splits the raw query into individual keywords. "fuel filter" -> ["fuel","filter"]
+function searchTokens(query){
+  return (query || '').toLowerCase().split(/\s+/).filter(Boolean);
+}
+// A part matches only if EVERY keyword appears in its part # or description.
+// Model name, figure name and ref # are deliberately excluded so that typing
+// "13000" or "carburetor" no longer drags in every part of a matching model/section.
+function matchesTokens(p, tokens){
+  if(!tokens.length) return true;
+  const hay = ((p.p || '') + ' ' + (p.d || '')).toLowerCase();
+  return tokens.every(t => hay.indexOf(t) !== -1);
+}
+function highlight(text, tokens){
+  const t = text || '';
+  if(!tokens || !tokens.length) return escHtml(t);
+  const re = new RegExp('(' + tokens.map(escRegex).join('|') + ')', 'gi');
+  let out = '', last = 0, m;
+  while((m = re.exec(t)) !== null){
+    if(m[0].length === 0){ re.lastIndex++; continue; }
+    out += escHtml(t.slice(last, m.index)) + MARK_OPEN + escHtml(m[0]) + '</mark>';
+    last = m.index + m[0].length;
+  }
+  return out + escHtml(t.slice(last));
 }
 
 // ---- Copy-to-clipboard for part numbers ----
@@ -555,6 +580,24 @@ function selectModelFromChip(model){
   addRecentModel(model);
   render();
 }
+// ---- Jump from a search hit to that part's model + figure, with the row flagged ----
+function goToPartFigure(model, figNum, ref, partNum){
+  if(selectedModel !== model){
+    const series = findSeriesForModel(model);
+    if(series){
+      seriesSelect.value = series;
+      populateModelsForSeries(series);
+      modelSelect.value = model;
+    }
+    selectedModel = model;
+    addRecentModel(model);
+  }
+  searchInput.value = '';
+  currentFigure = figNum;
+  renderDetail(figNum, { ref: ref, part: partNum });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function renderRecentModels(){
   const container = document.getElementById('recentModels');
   if(!container) return;
@@ -671,7 +714,7 @@ function renderSections(){
 }
 
 // ---------- Rendering: Detail view (diagram + parts) ----------
-function renderDetail(figNum){
+function renderDetail(figNum, focus){
   currentFigure = figNum;
   backBtn.classList.add('show');
   const figures = getFiguresForModel(selectedModel);
@@ -708,7 +751,7 @@ function renderDetail(figNum){
   `;
 
   renderDiagram(fig);
-  renderDetailTable(fig.parts);
+  renderDetailTable(fig.parts, focus);
 }
 
 function renderDiagram(fig){
@@ -828,12 +871,17 @@ function initMagnifier(imgEl, wrapEl){
   });
 }
 
-function renderDetailTable(parts){
+function renderDetailTable(parts, focus){
   const tbody = document.getElementById('detailTableBody');
   tbody.innerHTML = '';
   const frag = document.createDocumentFragment();
+  let focusRow = null;
   parts.forEach(p => {
     const tr = document.createElement('tr');
+    if(focus && p.ref === focus.ref && p.p === focus.part){
+      tr.classList.add('row-focus');
+      focusRow = tr;
+    }
     tr.innerHTML = `
       <td><span class="ref-badge">${escHtml(p.ref)}</span></td>
       <td>${partCodeCell(escHtml(p.p))}</td>
@@ -852,23 +900,27 @@ function renderDetailTable(parts){
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
+  if(focusRow){
+    const wrap = focusRow.closest('.table-scroll');
+    if(wrap){
+      const target = focusRow.offsetTop - (wrap.clientHeight / 2) + (focusRow.offsetHeight / 2);
+      wrap.scrollTop = Math.max(0, target);
+    }
+  }
 }
 
 // ---------- Rendering: flat search results across current model (when searching from detail, or no sections match) ----------
 function renderFlatSearch(){
   const q = searchInput.value.trim().toLowerCase();
+  const tokens = searchTokens(q);
   let rows = getModelParts(selectedModel);
   if(q){
-    rows = rows.filter(p =>
-      p.p.toLowerCase().includes(q) || p.d.toLowerCase().includes(q) ||
-      p.ref.toLowerCase().includes(q) || p.fg.toLowerCase().includes(q)
-    );
-    rows = rankResults(rows, q);
+    rows = rankResults(rows.filter(p => matchesTokens(p, tokens)), q);
   }
 
   backBtn.classList.remove('show');
   resultCount.textContent = `${rows.length} match${rows.length===1?'':'es'} in ${selectedModel}`;
-  metaHint.textContent = 'Showing matching parts across all sections';
+  metaHint.textContent = 'Click a part number to open its figure with that row highlighted';
 
   if(!rows.length){
     mainWrap.innerHTML = `<div class="no-results">No parts match your search.</div>`;
@@ -888,7 +940,7 @@ function renderFlatSearch(){
     </div>
   `;
   const tbody = document.getElementById('flatTableBody');
-  const q2 = q;
+  const q2 = tokens;
   rows.slice(0, 500).forEach(p => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -903,9 +955,7 @@ function renderFlatSearch(){
           : `<span class="not-found">● Not linked</span>`
       }</td>
     `;
-    tr.addEventListener('click', () => {
-      if(p.s === 'matched') window.open(p.u, '_blank', 'noopener');
-    });
+    tr.addEventListener('click', () => goToPartFigure(p.m, p.fn, p.ref, p.p));
     wireCopyButton(tr, p.p);
     tbody.appendChild(tr);
   });
@@ -914,12 +964,8 @@ function renderFlatSearch(){
 // ---------- Rendering: global search results across ALL models (when no model is selected yet) ----------
 function renderGlobalSearch(){
   const q = searchInput.value.trim().toLowerCase();
-  let rows = PARTS.filter(p =>
-    p.p.toLowerCase().includes(q) || p.d.toLowerCase().includes(q) ||
-    p.ref.toLowerCase().includes(q) || p.fg.toLowerCase().includes(q) ||
-    p.m.toLowerCase().includes(q)
-  );
-  rows = rankResults(rows, q);
+  const tokens = searchTokens(q);
+  let rows = rankResults(PARTS.filter(p => matchesTokens(p, tokens)), q);
 
   backBtn.classList.remove('show');
   const totalMatches = rows.length;
@@ -930,8 +976,8 @@ function renderGlobalSearch(){
     ? `Showing first ${CAP} of ${totalMatches} matches across all models`
     : `${totalMatches} match${totalMatches===1?'':'es'} across all models`;
   metaHint.textContent = totalMatches > CAP
-    ? 'Refine your search, or select a model above to narrow this down'
-    : 'Select a model above to browse its full diagram, or keep refining your search';
+    ? 'Add another keyword to narrow this down, or select a model above'
+    : 'Click a part number to open its figure with that row highlighted';
 
   if(!totalMatches){
     mainWrap.innerHTML = `<div class="no-results">No parts match your search in any model.</div>`;
@@ -951,7 +997,7 @@ function renderGlobalSearch(){
     </div>
   `;
   const tbody = document.getElementById('globalTableBody');
-  const q2 = q;
+  const q2 = tokens;
   shown.forEach(p => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -967,9 +1013,7 @@ function renderGlobalSearch(){
           : `<span class="not-found">● Not linked</span>`
       }</td>
     `;
-    tr.addEventListener('click', () => {
-      if(p.s === 'matched') window.open(p.u, '_blank', 'noopener');
-    });
+    tr.addEventListener('click', () => goToPartFigure(p.m, p.fn, p.ref, p.p));
     wireCopyButton(tr, p.p);
     tbody.appendChild(tr);
   });
