@@ -524,22 +524,62 @@ function wireCopyButton(rowEl, partNumber){
 }
 
 // ---- Search relevance ranking: exact part-number match first, then prefix match, then everything else ----
+// Width of the smallest stretch of text containing every keyword. A tight span
+// means the words belong together ("Filter,Fuel"); a wide one means they merely
+// co-occur somewhere in a long factory description. Infinity if any keyword is
+// absent. For a single-keyword query this is the same for every row, so result
+// order is left untouched.
+function tokenSpan(text, tokens){
+  const t = (text || '').toLowerCase();
+  let lo = Infinity, hi = -1;
+  for(let k = 0; k < tokens.length; k++){
+    const i = t.indexOf(tokens[k]);
+    if(i === -1) return Infinity;
+    if(i < lo) lo = i;
+    if(i + tokens[k].length > hi) hi = i + tokens[k].length;
+  }
+  return hi - lo;
+}
+
+// Relevance tier, lowest wins:
+//   0  part # is exactly the query
+//   1  part # starts with the query
+//   2  part # contains the query
+//   3  description contains the query as a phrase
+//   4  description contains every keyword
+//   5  keywords only satisfied across part # and description combined
+function relevanceTier(p, qLower, tokens){
+  const part = (p.p || '').toLowerCase();
+  if(part === qLower) return 0;
+  if(part.indexOf(qLower) === 0) return 1;
+  if(part.indexOf(qLower) !== -1) return 2;
+  const desc = (p.d || '').toLowerCase();
+  if(tokens.length > 1 && desc.indexOf(qLower) !== -1) return 3;
+  if(tokens.every(t => desc.indexOf(t) !== -1)) return 4;
+  return 5;
+}
+
 function rankResults(rows, q){
   if(!q) return rows;
   const qLower = q.toLowerCase();
+  const tokens = searchTokens(qLower);
+  const multi = tokens.length > 1;
   return rows
-    .map((row, idx) => ({ row, idx }))
+    .map((row, idx) => ({
+      row: row,
+      idx: idx,
+      tier: relevanceTier(row, qLower, tokens),
+      span: tokenSpan(row.d, tokens),
+      bulk: multi ? Math.min(4, Math.floor((row.d || '').length / 60)) : 0
+    }))
     .sort((a, b) => {
-      const rank = (p) => {
-        const pLower = p.toLowerCase();
-        if(pLower === qLower) return 0;
-        if(pLower.startsWith(qLower)) return 1;
-        return 2;
-      };
-      const aRank = rank(a.row.p);
-      const bRank = rank(b.row.p);
-      if(aRank !== bRank) return aRank - bRank;
-      return a.idx - b.idx; // stable sort for equal rank
+      if(a.tier !== b.tier) return a.tier - b.tier;
+      if(a.span !== b.span) return a.span - b.span;
+      // Multi-keyword only: sink very long factory descriptions that merely
+      // happen to contain the words. Bucketed in 60-char steps so ordinary
+      // descriptions stay tied and keep their model/figure grouping.
+      if(a.bulk !== b.bulk) return a.bulk - b.bulk;
+      return a.idx - b.idx;
     })
     .map(x => x.row);
 }
