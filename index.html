@@ -299,6 +299,7 @@
     vertical-align:top;
   }
   tbody tr{ cursor:pointer; transition:background .1s ease; }
+  #detailTableBody tr{ cursor:default; }
   tbody tr:hover{ background:var(--panel-2); }
   tbody tr.row-focus{
     background:rgba(214,69,69,0.13);
@@ -819,7 +820,7 @@ function renderDiagram(fig){
   const pageUrl = `${GH_BASE}/images/${encodeURIComponent(selectedModel)}/${encodeURIComponent(fig.page)}.jpeg`;
 
   body.innerHTML = `
-    <span class="no-hotspot-badge">● Click image to zoom — click a row on the right to open NetSuite</span>
+    <span class="no-hotspot-badge">● Click image to zoom — use the green Open button to view a part in NetSuite</span>
     <div class="plain-diagram-wrap">
       <div class="pd-head">
         <span>FIG.${escHtml(fig.num)} — ${escHtml(fig.name)}</span>
@@ -950,9 +951,6 @@ function renderDetailTable(parts, focus){
           : `<span class="not-found">● Not linked</span>`
       }</td>
     `;
-    tr.addEventListener('click', () => {
-      if(p.s === 'matched') window.open(p.u, '_blank', 'noopener');
-    });
     wireCopyButton(tr, p.p);
     frag.appendChild(tr);
   });
